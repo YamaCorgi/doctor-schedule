@@ -10,6 +10,21 @@ from googleapiclient.discovery import build
 
 load_dotenv()
 
+# =============================================
+# 要換 AI 模型就改這裡!(只有這一個地方)
+# =============================================
+AI_MODEL = "gemini-3-flash-preview"
+
+# 可選模型:
+# "gemini-3-flash-preview"       → Gemini 3 新模型,辨識較準,每日 250 次
+# "gemini-3-1-flash-lite-preview" → Gemini 3.1 Lite,每日 1000 次
+# "gemini-2.5-flash"             → 2.5 Flash,每日 20 次
+# "gemini-2.5-flash-lite"        → 2.5 Lite,每日 1000 次
+# "gemini-2.5-pro"               → 2.5 Pro(2026/4 起已改為付費,免費額度 0)
+
+# =============================================
+# API 金鑰
+# =============================================
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
 except Exception:
@@ -37,12 +52,7 @@ def check_password():
     st.set_page_config(page_title="醫師排班AI辨識系統 v2.0", page_icon="🔒")
     st.title("🔒 醫師排班AI辨識系統 v2.0")
     st.markdown("### 請輸入密碼以進入系統")
-    st.text_input(
-        "密碼",
-        type="password",
-        key="password_input",
-        on_change=password_entered,
-    )
+    st.text_input("密碼", type="password", key="password_input", on_change=password_entered)
     if "password_correct" in st.session_state and not st.session_state["password_correct"]:
         st.error("❌ 密碼錯誤,請重新輸入")
     st.caption("如需取得密碼,請聯絡管理員。")
@@ -107,7 +117,6 @@ def get_shift_time(department, date_str, shift_name):
 def get_calendar_service(target_email):
     safe_email = target_email.replace("@", "_at_").replace(".", "_")
     token_file = f"token_{safe_email}.json"
-
     creds = None
     if os.path.exists(token_file):
         creds = Credentials.from_authorized_user_file(token_file, SCOPES)
@@ -164,10 +173,8 @@ def write_to_calendar(shifts, doctor_name, target_email):
 
 
 def recognize_schedule(image, doctor_name):
-    model = genai.GenerativeModel(
-        "gemini-3-flash-preview",
-        generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
-    )
+    # 單行寫法,方便維護
+    model = genai.GenerativeModel(AI_MODEL, generation_config={"temperature": 0.0, "response_mime_type": "application/json"})
     prompt = f"""
 你正在分析一張台灣醫院的「急診醫師值班表」圖片。
 標題「急診醫師值班表-115年04月」= 民國115年4月 = 西元2026年4月。
@@ -203,7 +210,6 @@ def recognize_schedule(image, doctor_name):
 
 
 def clear_shift_widget_keys():
-    """清除所有班別表格相關的 widget state"""
     keys_to_del = [k for k in list(st.session_state.keys())
                    if k.startswith(("date_sh_", "shift_sh_", "dept_sh_", "del_sh_"))]
     for k in keys_to_del:
@@ -211,12 +217,10 @@ def clear_shift_widget_keys():
 
 
 def delete_shift(index):
-    """刪除指定 index 的班別,並重建 widget state 對應表"""
     shifts = st.session_state.get("shifts", [])
     if 0 <= index < len(shifts):
         shifts.pop(index)
         st.session_state["shifts"] = shifts
-    # 清除所有班別 widget 的 key,讓它們重新依據 shifts 建立
     clear_shift_widget_keys()
 
 
@@ -225,6 +229,8 @@ def delete_shift(index):
 # =============================================
 st.set_page_config(page_title="醫師排班AI辨識系統 v2.0", page_icon="🏥")
 st.title("🏥 醫師排班AI辨識系統 v2.0")
+
+st.caption(f"目前使用模型:`{AI_MODEL}`")
 
 st.markdown("### 第一步:輸入資訊")
 
@@ -246,7 +252,6 @@ if uploaded_file:
 if uploaded_file and doctor_name and target_email:
     st.success(f"✅ 將辨識 {doctor_name} 醫師的班別,並寫入 `{target_email}` 的行事曆")
     if st.button("🔍 開始辨識", type="primary"):
-        # 清除舊資料
         clear_shift_widget_keys()
         if "shifts" in st.session_state:
             del st.session_state["shifts"]
@@ -263,7 +268,7 @@ if uploaded_file and doctor_name and target_email:
             progress_bar.progress(40)
             time.sleep(0.3)
 
-            status_text.markdown("🤖 **階段 3/4**:AI 徹底掃描排班表中... `70%`")
+            status_text.markdown(f"🤖 **階段 3/4**:AI({AI_MODEL})辨識中... `70%`")
             progress_bar.progress(70)
             raw = recognize_schedule(image, doctor_name)
 
@@ -315,12 +320,9 @@ if "shifts" in st.session_state:
             clear_shift_widget_keys()
             st.rerun()
 
-    # 產生每筆班別的唯一識別 ID(用內容+索引產生穩定 key)
-    # 重點:key 用班別本身資料產生,不只用索引,避免刪除時對應錯亂
     edited_shifts = []
 
     for i, shift in enumerate(shifts):
-        # 產生穩定 key:用班別內容 + 索引共同決定
         uid = f"sh_{i}_{shift.get('date','')}_{shift.get('department','')}_{shift.get('shift','')}"
 
         col1, col2, col3, col4 = st.columns([2.2, 2.3, 1.8, 1])
@@ -329,24 +331,14 @@ if "shifts" in st.session_state:
         default_dept = shift.get("department", "內科+小兒科")
         if default_dept not in dept_options:
             default_dept = "內科+小兒科"
-        dept = col2.selectbox("部門", dept_options,
-                              index=dept_options.index(default_dept),
-                              key=f"dept_{uid}")
+        dept = col2.selectbox("部門", dept_options, index=dept_options.index(default_dept), key=f"dept_{uid}")
 
         default_shift = shift.get("shift", "白班")
         if default_shift not in shift_options:
             default_shift = "白班"
-        name = col3.selectbox("班別", shift_options,
-                              index=shift_options.index(default_shift),
-                              key=f"shift_{uid}")
+        name = col3.selectbox("班別", shift_options, index=shift_options.index(default_shift), key=f"shift_{uid}")
 
-        # 關鍵修正:刪除用 on_click callback,確保在正確的索引上執行
-        col4.button(
-            "🗑️ 刪除",
-            key=f"del_{uid}",
-            on_click=delete_shift,
-            args=(i,),
-        )
+        col4.button("🗑️ 刪除", key=f"del_{uid}", on_click=delete_shift, args=(i,))
 
         start_dt, end_dt = get_shift_time(dept, date, name)
         if start_dt:
@@ -365,15 +357,10 @@ if "shifts" in st.session_state:
     st.markdown(f"**📌 共 {len(edited_shifts)} 筆班別將寫入 `{target_email}` 的行事曆**")
 
     if st.button("✅ 確認並寫入 Google 行事曆", type="primary"):
-        # 寫入前先同步編輯結果到 session_state
         st.session_state["shifts"] = edited_shifts
         with st.spinner("⏳ 寫入中..."):
             try:
-                count, error_msg = write_to_calendar(
-                    edited_shifts,
-                    st.session_state["doctor_name"],
-                    target_email
-                )
+                count, error_msg = write_to_calendar(edited_shifts, st.session_state["doctor_name"], target_email)
                 if error_msg:
                     st.error(f"⚠️ {error_msg}")
                 else:
