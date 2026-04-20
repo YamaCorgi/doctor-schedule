@@ -165,7 +165,7 @@ def write_to_calendar(shifts, doctor_name, target_email):
 
 def recognize_schedule(image, doctor_name):
     model = genai.GenerativeModel(
-        "gemini-2.5-flash",
+        "gemini-2.5-pro",
         generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
     )
     prompt = f"""
