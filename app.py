@@ -34,8 +34,8 @@ def check_password():
     if st.session_state.get("password_correct", False):
         return True
 
-    st.set_page_config(page_title="醫師排班辨識系統", page_icon="🔒")
-    st.title("🔒 醫師排班辨識系統")
+    st.set_page_config(page_title="醫師排班AI辨識系統 v2.0", page_icon="🔒")
+    st.title("🔒 醫師排班AI辨識系統 v2.0")
     st.markdown("### 請輸入密碼以進入系統")
     st.text_input(
         "密碼",
@@ -223,8 +223,8 @@ def delete_shift(index):
 # =============================================
 # 介面
 # =============================================
-st.set_page_config(page_title="醫師排班辨識系統", page_icon="🏥")
-st.title("🏥 醫師排班辨識系統")
+st.set_page_config(page_title="醫師排班AI辨識系統 v2.0", page_icon="🏥")
+st.title("🏥 醫師排班AI辨識系統 v2.0")
 
 st.markdown("### 第一步:輸入資訊")
 
