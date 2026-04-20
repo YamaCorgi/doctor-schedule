@@ -10,9 +10,6 @@ from googleapiclient.discovery import build
 
 load_dotenv()
 
-# =============================================
-# Gemini API 金鑰設定（Streamlit Cloud 用 st.secrets，本機用 .env）
-# =============================================
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
 except Exception:
@@ -27,11 +24,9 @@ if api_key:
 APP_PASSWORD = "Yama520"
 
 def check_password():
-    """密碼驗證，失敗則擋住 app"""
     def password_entered():
         if st.session_state.get("password_input") == APP_PASSWORD:
             st.session_state["password_correct"] = True
-            # 清除密碼欄位，不留在記憶體
             del st.session_state["password_input"]
         else:
             st.session_state["password_correct"] = False
@@ -39,7 +34,6 @@ def check_password():
     if st.session_state.get("password_correct", False):
         return True
 
-    # 顯示密碼輸入畫面
     st.set_page_config(page_title="醫師排班辨識系統", page_icon="🔒")
     st.title("🔒 醫師排班辨識系統")
     st.markdown("### 請輸入密碼以進入系統")
@@ -59,9 +53,6 @@ if not check_password():
     st.stop()
 
 
-# =============================================
-# 班別時間對應表
-# =============================================
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 SHIFT_TIMES = {
@@ -174,7 +165,7 @@ def write_to_calendar(shifts, doctor_name, target_email):
 
 def recognize_schedule(image, doctor_name):
     model = genai.GenerativeModel(
-        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash",
         generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
     )
     prompt = f"""
@@ -211,6 +202,24 @@ def recognize_schedule(image, doctor_name):
     return raw
 
 
+def clear_shift_widget_keys():
+    """清除所有班別表格相關的 widget state"""
+    keys_to_del = [k for k in list(st.session_state.keys())
+                   if k.startswith(("date_sh_", "shift_sh_", "dept_sh_", "del_sh_"))]
+    for k in keys_to_del:
+        del st.session_state[k]
+
+
+def delete_shift(index):
+    """刪除指定 index 的班別,並重建 widget state 對應表"""
+    shifts = st.session_state.get("shifts", [])
+    if 0 <= index < len(shifts):
+        shifts.pop(index)
+        st.session_state["shifts"] = shifts
+    # 清除所有班別 widget 的 key,讓它們重新依據 shifts 建立
+    clear_shift_widget_keys()
+
+
 # =============================================
 # 介面
 # =============================================
@@ -237,10 +246,10 @@ if uploaded_file:
 if uploaded_file and doctor_name and target_email:
     st.success(f"✅ 將辨識 {doctor_name} 醫師的班別,並寫入 `{target_email}` 的行事曆")
     if st.button("🔍 開始辨識", type="primary"):
-        keys_to_del = [k for k in st.session_state.keys()
-                       if k.startswith(("date_", "shift_", "dept_", "keep_")) or k == "shifts"]
-        for k in keys_to_del:
-            del st.session_state[k]
+        # 清除舊資料
+        clear_shift_widget_keys()
+        if "shifts" in st.session_state:
+            del st.session_state["shifts"]
 
         status_text = st.empty()
         progress_bar = st.progress(0)
@@ -303,27 +312,41 @@ if "shifts" in st.session_state:
         if st.button("➕ 新增一筆班別"):
             shifts.append({"date": "2026-04-01", "department": "內科+小兒科", "shift": "白班"})
             st.session_state["shifts"] = shifts
+            clear_shift_widget_keys()
             st.rerun()
 
+    # 產生每筆班別的唯一識別 ID(用內容+索引產生穩定 key)
+    # 重點:key 用班別本身資料產生,不只用索引,避免刪除時對應錯亂
     edited_shifts = []
-    to_delete = []
 
     for i, shift in enumerate(shifts):
+        # 產生穩定 key:用班別內容 + 索引共同決定
+        uid = f"sh_{i}_{shift.get('date','')}_{shift.get('department','')}_{shift.get('shift','')}"
+
         col1, col2, col3, col4 = st.columns([2.2, 2.3, 1.8, 1])
-        date = col1.text_input("日期", value=shift.get("date", "2026-04-01"), key=f"date_{i}")
+        date = col1.text_input("日期", value=shift.get("date", "2026-04-01"), key=f"date_{uid}")
 
         default_dept = shift.get("department", "內科+小兒科")
         if default_dept not in dept_options:
             default_dept = "內科+小兒科"
-        dept = col2.selectbox("部門", dept_options, index=dept_options.index(default_dept), key=f"dept_{i}")
+        dept = col2.selectbox("部門", dept_options,
+                              index=dept_options.index(default_dept),
+                              key=f"dept_{uid}")
 
         default_shift = shift.get("shift", "白班")
         if default_shift not in shift_options:
             default_shift = "白班"
-        name = col3.selectbox("班別", shift_options, index=shift_options.index(default_shift), key=f"shift_{i}")
+        name = col3.selectbox("班別", shift_options,
+                              index=shift_options.index(default_shift),
+                              key=f"shift_{uid}")
 
-        if col4.button("🗑️ 刪除", key=f"del_{i}"):
-            to_delete.append(i)
+        # 關鍵修正:刪除用 on_click callback,確保在正確的索引上執行
+        col4.button(
+            "🗑️ 刪除",
+            key=f"del_{uid}",
+            on_click=delete_shift,
+            args=(i,),
+        )
 
         start_dt, end_dt = get_shift_time(dept, date, name)
         if start_dt:
@@ -337,20 +360,13 @@ if "shifts" in st.session_state:
 
         edited_shifts.append({"date": date, "department": dept, "shift": name})
 
-    if to_delete:
-        new_shifts = [s for idx, s in enumerate(edited_shifts) if idx not in to_delete]
-        st.session_state["shifts"] = new_shifts
-        keys_to_del = [k for k in st.session_state.keys()
-                       if k.startswith(("date_", "shift_", "dept_", "keep_", "del_"))]
-        for k in keys_to_del:
-            del st.session_state[k]
-        st.rerun()
-
     st.markdown("---")
     target_email = st.session_state.get("target_email", "featherch@gmail.com")
     st.markdown(f"**📌 共 {len(edited_shifts)} 筆班別將寫入 `{target_email}` 的行事曆**")
 
     if st.button("✅ 確認並寫入 Google 行事曆", type="primary"):
+        # 寫入前先同步編輯結果到 session_state
+        st.session_state["shifts"] = edited_shifts
         with st.spinner("⏳ 寫入中..."):
             try:
                 count, error_msg = write_to_calendar(
