@@ -13,7 +13,7 @@ load_dotenv()
 # =============================================
 # 要換 AI 模型就改這裡!(只有這一個地方)
 # =============================================
-AI_MODEL = "gemini-3-flash-preview"
+AI_MODEL = "gemini-2.5-flash"
 
 # 可選模型:
 # "gemini-3-flash-preview"       → Gemini 3 新模型,辨識較準,每日 250 次
